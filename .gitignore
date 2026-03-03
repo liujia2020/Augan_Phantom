@@ -1,0 +1,17 @@
+# 排除 Python 缓存
+__pycache__/
+*.py[cod]
+
+# 排除深度学习权重文件
+checkpoints/
+*.pth
+*.pkl
+
+# 排除数据文件（如果你以后要把数据放在这里）
+datasets/
+*.nii
+*.nii.gz
+*.csv
+
+# 排除 VS Code 配置
+.vscode/
