@@ -121,7 +121,8 @@ def main():
         epoch_duration = time.time() - epoch_start_time
         
         # 周期性监控与存档
-        utils.log_orthogonal_views_to_tb(writer, epoch, inputs_lq, fake_hq, targets_hq, spacing=(0.0326, 0.2, 0.2))
+        # utils.log_orthogonal_views_to_tb(writer, epoch, inputs_lq, fake_hq, targets_hq, spacing=(0.0326, 0.2, 0.2))
+        utils.log_orthogonal_views_to_tb(writer, epoch, inputs_lq, fake_hq, targets_hq, spacing=(0.0326, 0.2, 0.2), save_dir=nii_probe_dir)
         
         if epoch % 5 == 0 or epoch == opt.n_epochs:
             probe_path = os.path.join(nii_probe_dir, f'epoch_{epoch:03d}_pred.nii')

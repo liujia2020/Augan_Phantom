@@ -12,7 +12,7 @@ def save_nifti_probe(tensor, save_path):
     img = nib.Nifti1Image(data, np.eye(4))
     nib.save(img, save_path)
 
-def log_orthogonal_views_to_tb(writer, global_step, input_t, fake_t, target_t, spacing=(0.0326, 0.2, 0.2)):
+def log_orthogonal_views_to_tb(writer, global_step, input_t, fake_t, target_t, spacing=(0.0326, 0.2, 0.2), save_dir=None):
     """
     核心监控函数：截取 3D 矩阵正中心切片，根据物理间距修正长宽比，绘制 3x3 对比图并送入 TensorBoard。
     布局：
@@ -69,6 +69,20 @@ def log_orthogonal_views_to_tb(writer, global_step, input_t, fake_t, target_t, s
         ax.set_xticks([]); ax.set_yticks([])
         
     plt.tight_layout()
+    
+    # === 规范化的实体图片保存逻辑 ===
+    if save_dir is not None:
+        # 拼装出绝对路径，比如：./checkpoints/AUGAN_MVP_01/nii_probes/epoch_001_views.png
+        save_path = os.path.join(save_dir, f'epoch_{global_step:03d}_views.png')
+        fig.savefig(save_path, bbox_inches='tight', dpi=150)
+    
+    # 渲染画布并推送到 TensorBoard
+    writer.add_figure('Orthogonal_Views_Comparison', fig, global_step)
+    # === 新加的这两行：同时在本地存一份 PNG 实体图片 ===
+    # 我们把它存在默认的当前目录下，或者你可以传入具体的路径
+    fig.savefig(f'epoch_{global_step:03d}_views.png', bbox_inches='tight', dpi=150)
+    
     # 渲染画布并推送到 TensorBoard
     writer.add_figure('Orthogonal_Views_Comparison', fig, global_step)
     plt.close(fig) # 防止内存泄漏
+    
