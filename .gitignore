@@ -12,6 +12,7 @@ datasets/
 *.nii
 *.nii.gz
 *.csv
+*.png
 
 # 排除 VS Code 配置
 .vscode/
