@@ -72,17 +72,13 @@ def log_orthogonal_views_to_tb(writer, global_step, input_t, fake_t, target_t, s
     
     # === 规范化的实体图片保存逻辑 ===
     if save_dir is not None:
-        # 拼装出绝对路径，比如：./checkpoints/AUGAN_MVP_01/nii_probes/epoch_001_views.png
+        # 拼装出绝对路径，存入传入的专属文件夹
         save_path = os.path.join(save_dir, f'epoch_{global_step:03d}_views.png')
         fig.savefig(save_path, bbox_inches='tight', dpi=150)
     
     # 渲染画布并推送到 TensorBoard
     writer.add_figure('Orthogonal_Views_Comparison', fig, global_step)
-    # === 新加的这两行：同时在本地存一份 PNG 实体图片 ===
-    # 我们把它存在默认的当前目录下，或者你可以传入具体的路径
-    fig.savefig(f'epoch_{global_step:03d}_views.png', bbox_inches='tight', dpi=150)
     
-    # 渲染画布并推送到 TensorBoard
-    writer.add_figure('Orthogonal_Views_Comparison', fig, global_step)
+    # (原来在这里的 fig.savefig 到根目录，以及重复的 writer.add_figure 已经被彻底删除了！)
+    
     plt.close(fig) # 防止内存泄漏
-    

@@ -47,6 +47,16 @@ def main():
     tb_log_dir = os.path.join(expr_dir, 'tb_logs')
     nii_probe_dir = os.path.join(expr_dir, 'nii_probes')
     
+    # ================= 新增：定义监控图的专属文件夹 =================
+    views_dir = os.path.join(expr_dir, 'monitor_views')
+    
+    os.makedirs(expr_dir, exist_ok=True)
+    os.makedirs(tb_log_dir, exist_ok=True)
+    os.makedirs(nii_probe_dir, exist_ok=True)
+    
+    # ================= 新增：创建监控图专属文件夹 =================
+    os.makedirs(views_dir, exist_ok=True)
+    
     os.makedirs(expr_dir, exist_ok=True)
     os.makedirs(tb_log_dir, exist_ok=True)
     os.makedirs(nii_probe_dir, exist_ok=True)
@@ -138,7 +148,9 @@ def main():
         epoch_duration = time.time() - epoch_start_time
         
         # 周期性监控与存档
-        utils.log_orthogonal_views_to_tb(writer, epoch, inputs_lq, fake_hq, targets_hq, spacing=(0.0326, 0.2, 0.2), save_dir=nii_probe_dir)
+        # utils.log_orthogonal_views_to_tb(writer, epoch, inputs_lq, fake_hq, targets_hq, spacing=(0.0326, 0.2, 0.2), save_dir=nii_probe_dir)
+        # 周期性监控与存档 (将 save_dir 替换为专属的 views_dir)
+        utils.log_orthogonal_views_to_tb(writer, epoch, inputs_lq, fake_hq, targets_hq, spacing=(0.0326, 0.2, 0.2), save_dir=views_dir)
         
         if epoch % 5 == 0 or epoch == opt.n_epochs:
             probe_path = os.path.join(nii_probe_dir, f'epoch_{epoch:03d}_pred.nii')
