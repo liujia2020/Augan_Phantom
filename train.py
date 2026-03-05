@@ -3,7 +3,7 @@ from data.dataset import UltrasoundDataset
 from networks.generator import AnisotropicUNet
 from networks.discriminator import Discriminator3D
 import utils # 导入我们刚刚写的极其清爽的工具箱
-
+from networks.losses import AnisotropicSSIMLoss  # 确保路径与你放置 losses.py 的位置一致
 import os
 import time
 import argparse
@@ -34,6 +34,7 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--n_epochs', type=int, default=100, help='保持初始学习率的 Epoch 数量')
     parser.add_argument('--n_epochs_decay', type=int, default=100, help='学习率线性衰减到0的 Epoch 数量')
+    parser.add_argument('--lambda_ssim', type=float, default=10.0, help='各向异性 SSIM 的权重占比') # <--- 加上这一行
     parser.add_argument('--gpu_ids', type=str, default='0')
     parser.add_argument('--norm', type=str, default='batch')
     parser.add_argument('--use_dropout', action='store_true')
@@ -77,7 +78,9 @@ def main():
     # 优化器
     criterionGAN = nn.MSELoss() 
     criterionL1 = nn.L1Loss() 
+    criterionSSIM = AnisotropicSSIMLoss(window_size=(27, 5, 5)).to(device) # <--- 实例化我们的特制核
     lambda_L1 = 100.0
+    lambda_SSIM = opt.lambda_ssim # <--- 引入权重
     optimizer_G = optim.Adam(netG.parameters(), lr=opt.lr, betas=(0.5, 0.999))
     optimizer_D = optim.Adam(netD.parameters(), lr=opt.lr, betas=(0.5, 0.999))
 
@@ -126,21 +129,38 @@ def main():
             pred_fake_for_G = netD(torch.cat((inputs_lq, fake_hq), dim=1))
             loss_G_GAN = criterionGAN(pred_fake_for_G, torch.ones_like(pred_fake_for_G))
             loss_G_L1 = criterionL1(fake_hq, targets_hq) * lambda_L1
-            loss_G = loss_G_GAN + loss_G_L1
+            loss_G_SSIM = criterionSSIM(fake_hq, targets_hq) * lambda_SSIM # <--- 计算 SSIM Loss
+            loss_G = loss_G_GAN + loss_G_L1+ loss_G_SSIM
             loss_G.backward()
             optimizer_G.step()
-            
-            # --- TensorBoard 记录 ---
-            global_step += 1
-            writer.add_scalar('Loss/D_Total', loss_D.item(), global_step)
-            writer.add_scalar('Loss/G_GAN', loss_G_GAN.item(), global_step)
-            writer.add_scalar('Loss/G_L1_True', loss_G_L1.item() / lambda_L1, global_step)
+            # ================= 高内聚：字典化统一管理监控项 =================
+            # 只要把想看的指标塞进这个字典，后面的代码全自动接管！
+            log_dict = {
+                'D_Total': loss_D.item(),
+                'G_GAN': loss_G_GAN.item(),
+                'G_L1': loss_G_L1.item() / lambda_L1,
+                'G_SSIM': loss_G_SSIM.item() / lambda_SSIM if lambda_SSIM > 0 else 0.0
+            }
 
-            pbar.set_postfix({
-                'Loss_D': f"{loss_D.item():.4f}", 
-                'Loss_G': f"{loss_G_GAN.item():.4f}", 
-                'L1': f"{(loss_G_L1.item()/lambda_L1):.4f}"
-            })
+            global_step += 1
+            # 1. 自动推送到 TensorBoard
+            for k, v in log_dict.items():
+                writer.add_scalar(f'Loss/{k}', v, global_step)
+
+            # 2. 自动格式化更新到 tqdm 进度条尾部
+            pbar.set_postfix({k: f"{v:.4f}" for k, v in log_dict.items()})
+            
+            # # --- TensorBoard 记录 ---
+            # global_step += 1
+            # writer.add_scalar('Loss/D_Total', loss_D.item(), global_step)
+            # writer.add_scalar('Loss/G_GAN', loss_G_GAN.item(), global_step)
+            # writer.add_scalar('Loss/G_L1_True', loss_G_L1.item() / lambda_L1, global_step)
+
+            # # pbar.set_postfix({
+            # #     'Loss_D': f"{loss_D.item():.4f}", 
+            # #     'Loss_G': f"{loss_G_GAN.item():.4f}", 
+            # #     'L1': f"{(loss_G_L1.item()/lambda_L1):.4f}"
+            # # })
             
         # (修复 3：删除了这里错误粘贴的 total_epochs = ... 和 print 点火信息)
         
@@ -163,9 +183,11 @@ def main():
         scheduler_D.step()
         current_lr = optimizer_G.param_groups[0]['lr']
         
-        # 打印清爽的单行总结，包含当前的真实 LR
-        print(f"✅ Epoch [{epoch}/{total_epochs}] 结束 | 耗时: {epoch_duration:.2f} 秒 | 最新 L1: {(loss_G_L1.item()/lambda_L1):.4f} | 当前 LR: {current_lr:.6f}")
-
+        # # 打印清爽的单行总结，包含当前的真实 LR
+        # print(f"✅ Epoch [{epoch}/{total_epochs}] 结束 | 耗时: {epoch_duration:.2f} 秒 | 最新 L1: {(loss_G_L1.item()/lambda_L1):.4f} | 当前 LR: {current_lr:.6f}")
+        # 3. 自动生成单行日志总结！
+        loss_str = " | ".join([f"{k}: {v:.4f}" for k, v in log_dict.items()])
+        print(f"✅ Epoch [{epoch}/{total_epochs}] 结束 | 耗时: {epoch_duration:.2f} 秒 | 当前 LR: {current_lr:.6f} | {loss_str}")
     writer.close()
     print(">>> 训练结束！")
 
