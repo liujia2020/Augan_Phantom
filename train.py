@@ -3,7 +3,7 @@ from data.dataset import UltrasoundDataset
 from networks.generator import AnisotropicUNet
 from networks.discriminator import Discriminator3D
 import utils # 导入我们刚刚写的极其清爽的工具箱
-from networks.losses import AnisotropicSSIMLoss  # 确保路径与你放置 losses.py 的位置一致
+from networks.losses import AnisotropicSSIMLoss, FFTLoss  # 追加导入 FFTLoss
 import os
 import time
 import argparse
@@ -39,6 +39,13 @@ def parse_args():
     parser.add_argument('--norm', type=str, default='batch')
     parser.add_argument('--use_dropout', action='store_true')
     parser.add_argument('--use_sn', action='store_true')
+    # parser.add_argument('--lambda_ssim', type=float, default=10.0, help='各向异性 SSIM 的权重占比')
+    parser.add_argument('--lambda_fft', type=float, default=0.1, help='FFT 频域损失的权重占比') # <--- 新增这一行
+    # ======= 新增：将 L1 和 GAN 的权重也暴露给命令行 =======
+    parser.add_argument('--lambda_l1', type=float, default=100.0, help='L1 损失的权重占比')
+    parser.add_argument('--lambda_gan', type=float, default=1.0, help='GAN 损失的权重占比')
+    parser.add_argument('--resume_epoch', type=int, default=0, help='从指定的 epoch 恢复训练，0 表示从头开始')
+    # =========================================================
     return parser.parse_args()
 
 def main():
@@ -47,6 +54,11 @@ def main():
     expr_dir = os.path.join(opt.checkpoints_dir, opt.name)
     tb_log_dir = os.path.join(expr_dir, 'tb_logs')
     nii_probe_dir = os.path.join(expr_dir, 'nii_probes')
+    
+    # ======= 新增：定义并创建权重的专属文件夹 =======
+    weights_dir = os.path.join(expr_dir, 'weights')
+    os.makedirs(weights_dir, exist_ok=True)
+    # ==============================================
     
     # ================= 新增：定义监控图的专属文件夹 =================
     views_dir = os.path.join(expr_dir, 'monitor_views')
@@ -79,8 +91,14 @@ def main():
     criterionGAN = nn.MSELoss() 
     criterionL1 = nn.L1Loss() 
     criterionSSIM = AnisotropicSSIMLoss(window_size=(27, 5, 5)).to(device) # <--- 实例化我们的特制核
-    lambda_L1 = 100.0
+    criterionFFT = FFTLoss().to(device)  # <--- 新增实例化
+    
+
+    lambda_L1 = opt.lambda_l1
+    lambda_GAN = opt.lambda_gan
+    lambda_SSIM = opt.lambda_ssim
     lambda_SSIM = opt.lambda_ssim # <--- 引入权重
+    lambda_FFT = opt.lambda_fft          # <--- 获取权重参数
     optimizer_G = optim.Adam(netG.parameters(), lr=opt.lr, betas=(0.5, 0.999))
     optimizer_D = optim.Adam(netD.parameters(), lr=opt.lr, betas=(0.5, 0.999))
 
@@ -100,9 +118,32 @@ def main():
     global_step = 0
     total_epochs = opt.n_epochs + opt.n_epochs_decay  # 计算总轮数
     print(f">>> AUGAN 引擎点火，开始训练！总计划 Epoch: {total_epochs}")
+    start_epoch = 1
+    # ================= 新增：断点恢复逻辑 =================
+    if opt.resume_epoch > 0:
+        print(f">>> 正在从第 {opt.resume_epoch} 轮恢复训练...")
+        path_G = os.path.join(weights_dir, f'netG_epoch_{opt.resume_epoch}.pth')
+        path_D = os.path.join(weights_dir, f'netD_epoch_{opt.resume_epoch}.pth')
+        
+        # 1. 加载网络权重
+        netG.load_state_dict(torch.load(path_G, map_location=device))
+        netD.load_state_dict(torch.load(path_D, map_location=device))
+        
+        # 2. 修改起始 Epoch
+        start_epoch = opt.resume_epoch + 1
+        
+        # 3. 推进调度器，恢复到断点时的学习率
+        for _ in range(opt.resume_epoch):
+            scheduler_G.step()
+            scheduler_D.step()
+            
+        # 4. 恢复 global_step，让 TensorBoard 曲线不断层
+        global_step = opt.resume_epoch * len(dataloader)
+        print(f">>> 恢复成功！接下来的训练将从第 {start_epoch} 轮开始。当前 LR: {optimizer_G.param_groups[0]['lr']:.6f}")
+    # =======================================================
     
     # 修复 1：循环上限改为 total_epochs，打通衰减期
-    for epoch in range(1, total_epochs + 1):
+    for epoch in range(start_epoch, total_epochs + 1):
         epoch_start_time = time.time() # 记录当前 Epoch 开始时间
         netG.train(); netD.train()
         
@@ -127,19 +168,27 @@ def main():
             # --- 训练生成器 G ---
             optimizer_G.zero_grad()
             pred_fake_for_G = netD(torch.cat((inputs_lq, fake_hq), dim=1))
-            loss_G_GAN = criterionGAN(pred_fake_for_G, torch.ones_like(pred_fake_for_G))
+            
+            # loss_G_GAN = criterionGAN(pred_fake_for_G, torch.ones_like(pred_fake_for_G))
+            loss_G_GAN = criterionGAN(pred_fake_for_G, torch.ones_like(pred_fake_for_G)) * lambda_GAN
+            
             loss_G_L1 = criterionL1(fake_hq, targets_hq) * lambda_L1
             loss_G_SSIM = criterionSSIM(fake_hq, targets_hq) * lambda_SSIM # <--- 计算 SSIM Loss
-            loss_G = loss_G_GAN + loss_G_L1+ loss_G_SSIM
+            loss_G_FFT = criterionFFT(fake_hq, targets_hq) * lambda_FFT     # <--- 计算 FFT Loss
+            loss_G = loss_G_GAN + loss_G_L1+ loss_G_SSIM + loss_G_FFT
+            
             loss_G.backward()
             optimizer_G.step()
             # ================= 高内聚：字典化统一管理监控项 =================
             # 只要把想看的指标塞进这个字典，后面的代码全自动接管！
             log_dict = {
                 'D_Total': loss_D.item(),
-                'G_GAN': loss_G_GAN.item(),
-                'G_L1': loss_G_L1.item() / lambda_L1,
-                'G_SSIM': loss_G_SSIM.item() / lambda_SSIM if lambda_SSIM > 0 else 0.0
+                # 'G_GAN': loss_G_GAN.item(),
+                # 'G_L1': loss_G_L1.item() / lambda_L1 ,
+                'G_GAN': loss_G_GAN.item() / lambda_GAN if lambda_GAN > 0 else 0.0,
+                'G_L1': loss_G_L1.item() / lambda_L1 if lambda_L1 > 0 else 0.0,
+                'G_SSIM': loss_G_SSIM.item() / lambda_SSIM if lambda_SSIM > 0 else 0.0,
+                'G_FFT': loss_G_FFT.item() / lambda_FFT if lambda_FFT > 0 else 0.0  # <--- 挂载到字典！
             }
 
             global_step += 1
@@ -150,33 +199,17 @@ def main():
             # 2. 自动格式化更新到 tqdm 进度条尾部
             pbar.set_postfix({k: f"{v:.4f}" for k, v in log_dict.items()})
             
-            # # --- TensorBoard 记录 ---
-            # global_step += 1
-            # writer.add_scalar('Loss/D_Total', loss_D.item(), global_step)
-            # writer.add_scalar('Loss/G_GAN', loss_G_GAN.item(), global_step)
-            # writer.add_scalar('Loss/G_L1_True', loss_G_L1.item() / lambda_L1, global_step)
 
-            # # pbar.set_postfix({
-            # #     'Loss_D': f"{loss_D.item():.4f}", 
-            # #     'Loss_G': f"{loss_G_GAN.item():.4f}", 
-            # #     'L1': f"{(loss_G_L1.item()/lambda_L1):.4f}"
-            # # })
-            
-        # (修复 3：删除了这里错误粘贴的 total_epochs = ... 和 print 点火信息)
-        
-        # 计算 Epoch 耗时
         epoch_duration = time.time() - epoch_start_time
         
-        # 周期性监控与存档
-        # utils.log_orthogonal_views_to_tb(writer, epoch, inputs_lq, fake_hq, targets_hq, spacing=(0.0326, 0.2, 0.2), save_dir=nii_probe_dir)
-        # 周期性监控与存档 (将 save_dir 替换为专属的 views_dir)
+
         utils.log_orthogonal_views_to_tb(writer, epoch, inputs_lq, fake_hq, targets_hq, spacing=(0.0326, 0.2, 0.2), save_dir=views_dir)
         
         if epoch % 5 == 0 or epoch == opt.n_epochs:
             probe_path = os.path.join(nii_probe_dir, f'epoch_{epoch:03d}_pred.nii')
             utils.save_nifti_probe(fake_hq[0:1], probe_path)
-            torch.save(netG.state_dict(), os.path.join(expr_dir, f'netG_epoch_{epoch}.pth'))
-            torch.save(netD.state_dict(), os.path.join(expr_dir, f'netD_epoch_{epoch}.pth'))
+            torch.save(netG.state_dict(), os.path.join(weights_dir, f'netG_epoch_{epoch}.pth'))
+            torch.save(netD.state_dict(), os.path.join(weights_dir, f'netD_epoch_{epoch}.pth'))
         
         # ================= 修复 4：极其关键的调度器步进与监控 =================
         scheduler_G.step()

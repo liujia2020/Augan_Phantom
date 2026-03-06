@@ -57,3 +57,25 @@ class AnisotropicSSIMLoss(torch.nn.Module):
         
         # 深度学习中 Loss 越小越好，因此返回 1 - SSIM
         return 1.0 - ssim_map.mean()
+
+class FFTLoss(torch.nn.Module):
+    """
+    频域损失 (Frequency Loss / FFT Loss)
+    利用 3D 快速傅里叶变换提取振幅谱，强迫网络消除周期性的空间条纹伪影（如百叶窗）。
+    """
+    def __init__(self):
+        super(FFTLoss, self).__init__()
+        # 频域振幅的差异，我们使用 L1 Loss 来计算绝对误差
+        self.criterion = torch.nn.L1Loss()
+
+    def forward(self, fake, target):
+        # 针对 5D 张量 (B, C, Z, Y, X)，在最后三个空间维度 (Z, Y, X) 上进行 3D 傅里叶变换
+        fake_fft = torch.fft.rfftn(fake, dim=(2, 3, 4))
+        target_fft = torch.fft.rfftn(target, dim=(2, 3, 4))
+        
+        # 获取频域的振幅谱 (求模: 取复数的绝对值)
+        fake_amplitude = torch.abs(fake_fft)
+        target_amplitude = torch.abs(target_fft)
+        
+        # 计算生成图和目标图在频域振幅上的 L1 距离
+        return self.criterion(fake_amplitude, target_amplitude)
