@@ -97,8 +97,8 @@ def main():
     lambda_L1 = opt.lambda_l1
     lambda_GAN = opt.lambda_gan
     lambda_SSIM = opt.lambda_ssim
-    lambda_SSIM = opt.lambda_ssim # <--- 引入权重
     lambda_FFT = opt.lambda_fft          # <--- 获取权重参数
+    
     optimizer_G = optim.Adam(netG.parameters(), lr=opt.lr, betas=(0.5, 0.999))
     optimizer_D = optim.Adam(netD.parameters(), lr=opt.lr, betas=(0.5, 0.999))
 
@@ -183,8 +183,6 @@ def main():
             # 只要把想看的指标塞进这个字典，后面的代码全自动接管！
             log_dict = {
                 'D_Total': loss_D.item(),
-                # 'G_GAN': loss_G_GAN.item(),
-                # 'G_L1': loss_G_L1.item() / lambda_L1 ,
                 'G_GAN': loss_G_GAN.item() / lambda_GAN if lambda_GAN > 0 else 0.0,
                 'G_L1': loss_G_L1.item() / lambda_L1 if lambda_L1 > 0 else 0.0,
                 'G_SSIM': loss_G_SSIM.item() / lambda_SSIM if lambda_SSIM > 0 else 0.0,
