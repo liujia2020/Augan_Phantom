@@ -28,23 +28,24 @@ def parse_args():
     parser.add_argument('--input_nc', type=int, default=1)
     parser.add_argument('--output_nc', type=int, default=1)
     parser.add_argument('--batch_size', type=int, default=2)
-    parser.add_argument('--patch_size_d', type=int, default=256)
+    parser.add_argument('--patch_size_d', type=int, default=128)
     parser.add_argument('--patch_size_h', type=int, default=64)
     parser.add_argument('--patch_size_w', type=int, default=64)
     parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--n_epochs', type=int, default=100, help='保持初始学习率的 Epoch 数量')
     parser.add_argument('--n_epochs_decay', type=int, default=100, help='学习率线性衰减到0的 Epoch 数量')
-    parser.add_argument('--lambda_ssim', type=float, default=10.0, help='各向异性 SSIM 的权重占比') # <--- 加上这一行
+
     parser.add_argument('--gpu_ids', type=str, default='0')
     parser.add_argument('--norm', type=str, default='batch')
     parser.add_argument('--use_dropout', action='store_true')
     parser.add_argument('--use_sn', action='store_true')
-    # parser.add_argument('--lambda_ssim', type=float, default=10.0, help='各向异性 SSIM 的权重占比')
+    parser.add_argument('--resume_epoch', type=int, default=0, help='从指定的 epoch 恢复训练，0 表示从头开始')
+    
+    parser.add_argument('--lambda_ssim', type=float, default=10.0, help='各向异性 SSIM 的权重占比')
     parser.add_argument('--lambda_fft', type=float, default=0.1, help='FFT 频域损失的权重占比') # <--- 新增这一行
-    # ======= 新增：将 L1 和 GAN 的权重也暴露给命令行 =======
     parser.add_argument('--lambda_l1', type=float, default=100.0, help='L1 损失的权重占比')
     parser.add_argument('--lambda_gan', type=float, default=1.0, help='GAN 损失的权重占比')
-    parser.add_argument('--resume_epoch', type=int, default=0, help='从指定的 epoch 恢复训练，0 表示从头开始')
+    
     # =========================================================
     return parser.parse_args()
 
@@ -98,7 +99,6 @@ def main():
     lambda_GAN = opt.lambda_gan
     lambda_SSIM = opt.lambda_ssim
     lambda_FFT = opt.lambda_fft          # <--- 获取权重参数
-    
     optimizer_G = optim.Adam(netG.parameters(), lr=opt.lr, betas=(0.5, 0.999))
     optimizer_D = optim.Adam(netD.parameters(), lr=opt.lr, betas=(0.5, 0.999))
 
