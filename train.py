@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--n_epochs', type=int, default=100, help='保持初始学习率的 Epoch 数量')
     parser.add_argument('--n_epochs_decay', type=int, default=100, help='学习率线性衰减到0的 Epoch 数量')
-
+    parser.add_argument('--dir_extra', type=str, default='Recon_LQ_03', help='用于在监控图最左侧显示的额外文件夹')
     parser.add_argument('--gpu_ids', type=str, default='0')
     parser.add_argument('--norm', type=str, default='batch')
     parser.add_argument('--use_dropout', action='store_true')
@@ -81,7 +81,8 @@ def main():
 
     # 数据集
     patch_size = (opt.patch_size_d, opt.patch_size_h, opt.patch_size_w)
-    dataset = UltrasoundDataset(dataroot=opt.dataroot, dir_lq=opt.dir_lq, dir_sq=opt.dir_sq, patch_size=patch_size)
+    dataset = UltrasoundDataset(dataroot=opt.dataroot, dir_extra=opt.dir_extra, dir_lq=opt.dir_lq, dir_sq=opt.dir_sq, patch_size=patch_size)
+    # dataset = UltrasoundDataset(dataroot=opt.dataroot, dir_lq=opt.dir_lq, dir_sq=opt.dir_sq, patch_size=patch_size)
     dataloader = DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=4, drop_last=True)
     
     # 网络
@@ -151,6 +152,7 @@ def main():
         pbar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch [{epoch}/{total_epochs}]", leave=False)
         
         for i, batch in pbar:
+            inputs_extra = batch['extra'].to(device)
             inputs_lq = batch['lq'].to(device)
             targets_hq = batch['hq'].to(device)
             fake_hq = netG(inputs_lq)
@@ -201,7 +203,7 @@ def main():
         epoch_duration = time.time() - epoch_start_time
         
 
-        utils.log_orthogonal_views_to_tb(writer, epoch, inputs_lq, fake_hq, targets_hq, spacing=(0.0326, 0.2, 0.2), save_dir=views_dir)
+        utils.log_orthogonal_views_to_tb(writer, epoch, inputs_extra, inputs_lq, fake_hq, targets_hq, spacing=(0.0326, 0.2, 0.2), save_dir=views_dir)
         
         if epoch % 5 == 0 or epoch == opt.n_epochs:
             probe_path = os.path.join(nii_probe_dir, f'epoch_{epoch:03d}_pred.nii')
