@@ -1,6 +1,79 @@
 import torch
 import torch.nn as nn
+class StandardUNet3D(nn.Module):
+    """
+    最原始的 Standard 3D U-Net (用于消融实验的 Baseline)
+    - 采用各向同性 3x3x3 卷积
+    - 采用各向同性 2x2x2 池化和上采样
+    """
+    def __init__(self, input_nc=1, output_nc=1, ngf=64):
+        super(StandardUNet3D, self).__init__()
+        
+        # Down 1
+        self.conv1 = self._block(input_nc, ngf)
+        self.pool1 = nn.MaxPool3d(kernel_size=2, stride=2)
+        
+        # Down 2
+        self.conv2 = self._block(ngf, ngf*2)
+        self.pool2 = nn.MaxPool3d(kernel_size=2, stride=2)
+        
+        # Down 3
+        self.conv3 = self._block(ngf*2, ngf*4)
+        self.pool3 = nn.MaxPool3d(kernel_size=2, stride=2)
+        
+        # Bottom
+        self.bottom = self._block(ngf*4, ngf*8)
+        
+        # Up 1
+        self.up1 = nn.ConvTranspose3d(ngf*8, ngf*4, kernel_size=2, stride=2)
+        self.conv_up1 = self._block(ngf*8, ngf*4)
+        
+        # Up 2
+        self.up2 = nn.ConvTranspose3d(ngf*4, ngf*2, kernel_size=2, stride=2)
+        self.conv_up2 = self._block(ngf*4, ngf*2)
+        
+        # Up 3
+        self.up3 = nn.ConvTranspose3d(ngf*2, ngf, kernel_size=2, stride=2)
+        self.conv_up3 = self._block(ngf*2, ngf)
+        
+        # Final
+        self.final = nn.Conv3d(ngf, output_nc, kernel_size=1)
 
+    def _block(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.Conv3d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm3d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv3d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm3d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        c1 = self.conv1(x)
+        p1 = self.pool1(c1)
+        
+        c2 = self.conv2(p1)
+        p2 = self.pool2(c2)
+        
+        c3 = self.conv3(p2)
+        p3 = self.pool3(c3)
+        
+        b = self.bottom(p3)
+        
+        u1 = self.up1(b)
+        u1 = torch.cat([u1, c3], dim=1)
+        cu1 = self.conv_up1(u1)
+        
+        u2 = self.up2(cu1)
+        u2 = torch.cat([u2, c2], dim=1)
+        cu2 = self.conv_up2(u2)
+        
+        u3 = self.up3(cu2)
+        u3 = torch.cat([u3, c1], dim=1)
+        cu3 = self.conv_up3(u3)
+        
+        return torch.tanh(self.final(cu3))
 class AnisotropicUNet(nn.Module):
     """
     AUGAN 专属 3D U-Net (极简解耦版)
