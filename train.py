@@ -13,7 +13,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm  # <--- 引入进度条神器
-
+from networks.generator import AnisotropicUNet, StandardUNet3D
 
 
 def parse_args():
@@ -86,7 +86,14 @@ def main():
     dataloader = DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=4, drop_last=True)
     
     # 网络
-    netG = AnisotropicUNet(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=64).to(device)
+    # netG = AnisotropicUNet(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=64).to(device)
+    # 动态选择网络架构
+    if opt.netG == 'standard_unet_3d':
+        netG = StandardUNet3D(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=32).to(device)
+        print(">>> 已加载: Standard 3D U-Net (Baseline)")
+    else:
+        netG = AnisotropicUNet(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=64).to(device)
+        print(">>> 已加载: Anisotropic 3D U-Net")
     netD = Discriminator3D(input_nc=opt.input_nc + opt.output_nc, ndf=64).to(device)
     
     # 优化器

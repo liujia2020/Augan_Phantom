@@ -7,7 +7,7 @@ import nibabel as nib
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
+from networks.generator import AnisotropicUNet, StandardUNet3D
 # 导入我们的各向异性生成器
 from networks.generator import AnisotropicUNet
 
@@ -161,7 +161,13 @@ def main():
     print(f"🚀 全卷测试 (Resave All Strategy + Hann Window): {opt.name}")
     print("="*80)
     
-    model = AnisotropicUNet(input_nc=1, output_nc=1, ngf=64).to(device)
+    # model = AnisotropicUNet(input_nc=1, output_nc=1, ngf=64).to(device)
+    if opt.netG == 'standard_unet_3d':
+        model = StandardUNet3D(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=64).to(device)
+        print(">>> 已加载: Standard 3D U-Net (Baseline)")
+    else:
+        model = AnisotropicUNet(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=64).to(device)
+        print(">>> 已加载: Anisotropic 3D U-Net")
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval()
     

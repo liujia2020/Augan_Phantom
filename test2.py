@@ -7,9 +7,8 @@ import nibabel as nib
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from networks.generator import AnisotropicUNet, StandardUNet3D
 
-# 导入我们的各向异性生成器
-from networks.generator import AnisotropicUNet
 
 def parse_args():
     parser = argparse.ArgumentParser(description="AUGAN 3D Testing Engine (Bait-and-Switch Strategy)")
@@ -21,7 +20,7 @@ def parse_args():
     parser.add_argument('--dir_extra', type=str, default='Recon_LQ_03', help='用于画图和保存基线的 3角度 极差数据')
     parser.add_argument('--dir_lq', type=str, default='Recon_HQ_33', help='真正送入网络推理的 33角度 数据')
     parser.add_argument('--dir_sq', type=str, default='Recon_SQ_75', help='Ground Truth 75角度 金标准')
-    
+    parser.add_argument('--netG', type=str, default='anisotropic_unet_3d', help='选择网络架构')
     parser.add_argument('--results_dir', type=str, default=None)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--gpu_ids', type=str, default='0')
@@ -159,7 +158,14 @@ def main():
     print(f"🚀 全卷测试 (狸猫换太子策略): {opt.name}")
     print("="*80)
     
-    model = AnisotropicUNet(input_nc=1, output_nc=1, ngf=64).to(device)
+    # model = AnisotropicUNet(input_nc=1, output_nc=1, ngf=64).to(device)
+    # 动态选择网络架构
+    if opt.netG == 'standard_unet_3d':
+        model = StandardUNet3D(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=64).to(device)
+        print(">>> 已加载: Standard 3D U-Net (Baseline)")
+    else:
+        model = AnisotropicUNet(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=64).to(device)
+        print(">>> 已加载: Anisotropic 3D U-Net")
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval()
     
@@ -177,7 +183,8 @@ def main():
         file_path_lq = os.path.join(test_dir_lq, file_name)
         
         # 提取核心文件名，去匹配另外两个维度的文件夹
-        base_name = case_name.split('_hq')[0].split('_lq')[0].split('_sq')[0]
+        # base_name = case_name.split('_hq')[0].split('_lq')[0].split('_sq')[0]
+        base_name = case_name.split('_hq')[0].split('_lq')[0].split('_sq')[0].split('_mq')[0]
         
         # 寻找 Extra(03角度) 和 Truth(75角度)
         matched_extra = glob.glob(os.path.join(test_dir_extra, f"{base_name}*.nii*"))
@@ -206,7 +213,8 @@ def main():
             vol_sq = np.zeros_like(vol_lq) - 60.0
             has_truth = False
             
-        print("  -> Running inference (Network input is 33-Angle)...")
+        # print("  -> Running inference (Network input is 33-Angle)...")
+        print(f"  -> Running inference (Network input is from {opt.dir_lq})...")
         # 🎯 注意看：真正送进去跑的依然是 vol_lq (33角度)
         vol_fake = predict_sliding_window(model, vol_lq, patch_size, stride, device)
         
