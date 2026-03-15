@@ -15,7 +15,8 @@ def parse_args():
     parser.add_argument('--dataroot', type=str, required=True)
     parser.add_argument('--name', type=str, default='AUGAN_MVP_01')
     parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints')
-    
+    parser.add_argument('--input_nc', type=int, default=1)
+    parser.add_argument('--output_nc', type=int, default=1)
     # 核心三轨路径参数
     parser.add_argument('--dir_extra', type=str, default='Recon_LQ_03', help='用于画图和保存基线的 3角度 极差数据')
     parser.add_argument('--dir_lq', type=str, default='Recon_HQ_33', help='真正送入网络推理的 33角度 数据')
@@ -161,11 +162,11 @@ def main():
     # model = AnisotropicUNet(input_nc=1, output_nc=1, ngf=64).to(device)
     # 动态选择网络架构
     if opt.netG == 'standard_unet_3d':
-        model = StandardUNet3D(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=64).to(device)
-        print(">>> 已加载: Standard 3D U-Net (Baseline)")
+        model = StandardUNet3D(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=32).to(device)
+        print(">>> 已加载: Standard 3D U-Net (Baseline, ngf=32)")
     else:
         model = AnisotropicUNet(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=64).to(device)
-        print(">>> 已加载: Anisotropic 3D U-Net")
+        print(">>> 已加载: Anisotropic 3D U-Net (ngf=64)")
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval()
     
