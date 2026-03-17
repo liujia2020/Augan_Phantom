@@ -21,6 +21,38 @@ def create_window_3d(window_size_z, window_size_y, window_size_x, channel=1):
     window = _3D_window.expand(channel, 1, window_size_z, window_size_y, window_size_x).contiguous()
     return window
 
+class AnisotropicGradientLoss(torch.nn.Module):
+    """
+    各向异性 3D 梯度损失 (Anisotropic 3D Gradient Loss)
+    利用有限差分法提取边缘突变，并强行给予 Z 轴 5.52 倍的物理惩罚权重，
+    以完美补偿 Z 轴与 X/Y 轴极其悬殊的物理间距差异 (0.2 / 0.0362 ≈ 5.52)。
+    """
+    def __init__(self):
+        super(AnisotropicGradientLoss, self).__init__()
+        # 使用 L1 计算梯度的绝对误差
+        self.criterion = torch.nn.L1Loss()
+        # 👑 核心物理外挂：Z 轴权重补偿
+        self.z_weight = 5.52 
+
+    def forward(self, fake, target):
+        # 1. Z 轴差分 (深度方向)
+        fake_dz = fake[:, :, 1:, :, :] - fake[:, :, :-1, :, :]
+        target_dz = target[:, :, 1:, :, :] - target[:, :, :-1, :, :]
+        loss_z = self.criterion(fake_dz, target_dz) * self.z_weight
+
+        # 2. Y 轴差分 (高度方向)
+        fake_dy = fake[:, :, :, 1:, :] - fake[:, :, :, :-1, :]
+        target_dy = target[:, :, :, 1:, :] - target[:, :, :, :-1, :]
+        loss_y = self.criterion(fake_dy, target_dy)
+
+        # 3. X 轴差分 (宽度方向)
+        fake_dx = fake[:, :, :, :, 1:] - fake[:, :, :, :, :-1]
+        target_dx = target[:, :, :, :, 1:] - target[:, :, :, :, :-1]
+        loss_x = self.criterion(fake_dx, target_dx)
+
+        # 汇总三个维度的梯度误差
+        return loss_z + loss_y + loss_x
+
 class AnisotropicSSIMLoss(torch.nn.Module):
     """
     量身定制的各向异性 3D SSIM 损失

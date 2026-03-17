@@ -3,7 +3,7 @@ from data.dataset import UltrasoundDataset
 from networks.generator import AnisotropicUNet
 from networks.discriminator import Discriminator3D
 import utils # 导入我们刚刚写的极其清爽的工具箱
-from networks.losses import AnisotropicSSIMLoss, FFTLoss  # 追加导入 FFTLoss
+from networks.losses import AnisotropicSSIMLoss, FFTLoss, AnisotropicGradientLoss  # 追加导入 FFTLoss
 import os
 import time
 import argparse
@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument('--use_dropout', action='store_true')
     parser.add_argument('--use_sn', action='store_true')
     parser.add_argument('--resume_epoch', type=int, default=0, help='从指定的 epoch 恢复训练，0 表示从头开始')
-    
+    parser.add_argument('--lambda_grad', type=float, default=10.0, help='各向异性 3D 梯度损失的权重') # <--- 新增这一行
     parser.add_argument('--lambda_ssim', type=float, default=10.0, help='各向异性 SSIM 的权重占比')
     parser.add_argument('--lambda_fft', type=float, default=0.1, help='FFT 频域损失的权重占比') # <--- 新增这一行
     parser.add_argument('--lambda_l1', type=float, default=100.0, help='L1 损失的权重占比')
@@ -95,18 +95,20 @@ def main():
         netG = AnisotropicUNet(input_nc=opt.input_nc, output_nc=opt.output_nc, ngf=64).to(device)
         print(">>> 已加载: Anisotropic 3D U-Net")
     netD = Discriminator3D(input_nc=opt.input_nc + opt.output_nc, ndf=64).to(device)
-    
+################################################################################################################################
     # 优化器
     criterionGAN = nn.MSELoss() 
     criterionL1 = nn.L1Loss() 
     criterionSSIM = AnisotropicSSIMLoss(window_size=(27, 5, 5)).to(device) # <--- 实例化我们的特制核
     criterionFFT = FFTLoss().to(device)  # <--- 新增实例化
+    criterionGrad = AnisotropicGradientLoss().to(device) # <--- 新增实例化
     
 
     lambda_L1 = opt.lambda_l1
     lambda_GAN = opt.lambda_gan
     lambda_SSIM = opt.lambda_ssim
     lambda_FFT = opt.lambda_fft          # <--- 获取权重参数
+    lambda_Grad = opt.lambda_grad
     optimizer_G = optim.Adam(netG.parameters(), lr=opt.lr, betas=(0.5, 0.999))
     optimizer_D = optim.Adam(netD.parameters(), lr=opt.lr, betas=(0.5, 0.999))
 
@@ -185,7 +187,7 @@ def main():
             loss_G_SSIM = criterionSSIM(fake_hq, targets_hq) * lambda_SSIM # <--- 计算 SSIM Loss
             loss_G_FFT = criterionFFT(fake_hq, targets_hq) * lambda_FFT     # <--- 计算 FFT Loss
             loss_G = loss_G_GAN + loss_G_L1+ loss_G_SSIM + loss_G_FFT
-            
+            loss_G_Grad = criterionGrad(fake_hq, targets_hq) * lambda_Grad # <--- 计算 3D 梯度 Loss
             loss_G.backward()
             optimizer_G.step()
             # ================= 高内聚：字典化统一管理监控项 =================
@@ -195,7 +197,8 @@ def main():
                 'G_GAN': loss_G_GAN.item() / lambda_GAN if lambda_GAN > 0 else 0.0,
                 'G_L1': loss_G_L1.item() / lambda_L1 if lambda_L1 > 0 else 0.0,
                 'G_SSIM': loss_G_SSIM.item() / lambda_SSIM if lambda_SSIM > 0 else 0.0,
-                'G_FFT': loss_G_FFT.item() / lambda_FFT if lambda_FFT > 0 else 0.0  # <--- 挂载到字典！
+                'G_FFT': loss_G_FFT.item() / lambda_FFT if lambda_FFT > 0 else 0.0,  # <--- 挂载到字典！
+                'G_Grad': loss_G_Grad.item() / lambda_Grad if lambda_Grad > 0 else 0.0 # <--- 挂载到字典！
             }
 
             global_step += 1

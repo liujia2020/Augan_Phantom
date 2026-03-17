@@ -31,6 +31,7 @@ def parse_args():
     parser.add_argument('--stride_d', type=int, default=128)
     parser.add_argument('--stride_h', type=int, default=32)
     parser.add_argument('--stride_w', type=int, default=32)
+    
     return parser.parse_args()
 
 # ==============================================================================
